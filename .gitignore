@@ -1,0 +1,58 @@
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!**/.env.example
+
+# Data and temporary assets
+*.parquet
+*.sqlite
+*.db
+*.log
+
+# Node/Next.js build output
+node_modules/
+.next/
+.turbo/
+.vercel/
+dist/
+out/
+coverage/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Local tooling
+.jupyter/
+.vscode/
+
+# Project-specific generated data
+binance/mlruns/*
+!binance/mlruns/.gitkeep
+binance/data/*
+!binance/data/.gitkeep
+
+# others
+*.json
+*.ipynb_checkpoints
+*.ipynb
+*.csv
+*.yaml

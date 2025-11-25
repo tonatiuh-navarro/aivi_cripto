@@ -1,0 +1,11 @@
+polars
+duckdb
+pyarrow
+httpx
+mlflow
+rich
+typer
+jinja2
+lean
+matplotlib
+pyyaml
