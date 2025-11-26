@@ -6,7 +6,7 @@ class ATRStop(BaseStage):
     def __init__(self, multiplier: float):
         self.multiplier = multiplier
 
-    def apply(self, frame: pl.DataFrame) -> pl.DataFrame:
+    def transform(self, frame: pl.DataFrame) -> pl.DataFrame:
         stop = (
             pl.when(pl.col('trade_event'))
             .then(

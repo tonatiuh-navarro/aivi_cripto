@@ -7,7 +7,7 @@ class MASignal(BaseStage):
         self.fast = fast
         self.slow = slow
 
-    def apply(self, frame: pl.DataFrame) -> pl.DataFrame:
+    def transform(self, frame: pl.DataFrame) -> pl.DataFrame:
         ma_fast = pl.col('close').rolling_mean(window_size=self.fast)
         ma_slow = pl.col('close').rolling_mean(window_size=self.slow)
         signal = pl.when(ma_fast >= ma_slow).then(1).otherwise(-1)
