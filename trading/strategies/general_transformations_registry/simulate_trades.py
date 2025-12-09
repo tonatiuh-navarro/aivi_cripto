@@ -58,7 +58,8 @@ class SimulateTrades(BaseStage):
                 'open_time': exit_time,
                 'strategy_return': trade_return,
                 'trade_label': 'win' if trade_return > 0 else 'loss',
-                'exit_reason': exit_reason
+                'exit_reason': exit_reason,
+                'exit_price': exit_price,
             })
         exit_df = pl.DataFrame(
             exit_records,
@@ -67,6 +68,7 @@ class SimulateTrades(BaseStage):
                 'strategy_return': pl.Float64,
                 'trade_label': pl.Utf8,
                 'exit_reason': pl.Utf8,
+                'exit_price': pl.Float64,
             }
         )
         return frame.join(exit_df, on='open_time', how='left')

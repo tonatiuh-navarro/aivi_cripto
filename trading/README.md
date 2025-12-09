@@ -39,5 +39,35 @@ pipeline_df = apply_pipeline(df=market_df, stages=stage_cfgs)
 strategy_df = build_strategy_frame(market_df=market_df, stages=stage_cfgs)
 ```
 
+### Evaluar y optimizar
+- Evaluar por splits (pre_out_of_time/train/test):
+```python
+from utils.strategy_utils import evaluate_strategy
+pre_oos, train_res, test_res = evaluate_strategy(
+    market_df=market_df,
+    stage_cfgs=stage_cfgs,
+)
+```
+- Optimizar hiperparámetros con búsqueda grid/random:
+```python
+from utils.strategy_utils import optimize_strategy
+from utils.strategy_utils import trials_to_dataframe
+
+search_space = {
+    ("entry", "fast"): [5, 7, 10],
+    ("entry", "slow"): [12, 14, 20],
+    ("target_price", "multiplier"): [2.0, 3.0],
+    ("stop_loss", "multiplier"): [1.0, 1.5, 2.0],
+}
+best_params, best_metrics, trials = optimize_strategy(
+    market_df=market_df,
+    base_stages=stage_cfgs[:3],
+    search_space=search_space,
+    sampler="grid",
+    objective="total_return",
+)
+trials_df = trials_to_dataframe(trials)
+```
+
 ## Relación con `binance/`
 Las implementaciones reflejan `binance/strategies` para usarlas fuera del ETL/Lean. Si amplías o modificas las etapas, mantén ambas carpetas alineadas o migra el código común a un solo módulo compartido.

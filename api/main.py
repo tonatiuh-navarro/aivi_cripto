@@ -1,11 +1,13 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Iterable, List, Optional
 
 import polars as pl
-from fastapi import Body, Depends, FastAPI, HTTPException, Path, Query
+from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastApiPath, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from main import CashFlowSpec, ScenarioService, WalletConfig, WalletManager
+from utils.strategy_utils import optimize_strategy, apply_pipeline
 from .dependencies import get_manager
 from .schemas import (
     AlertPayload,
@@ -19,6 +21,14 @@ from .schemas import (
     ComparisonSummaryRow,
     ScenarioMeta,
     SummaryFreq,
+    OptimizeRequest,
+    OptimizeResponse,
+    TrialPayload,
+    EvaluateRequest,
+    EvaluateResponse,
+    EvaluatePayload,
+    MarketDataList,
+    MarketDataInfo,
     WalletCreatePayload,
     WalletPayload,
     WalletUpdatePayload,
@@ -31,6 +41,49 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _scan_market_data() -> list[MarketDataInfo]:
+    items: list[MarketDataInfo] = []
+    data_dir = Path("data")
+    for path in data_dir.glob("market_data_*_*.parquet"):
+        name = path.stem.replace("market_data_", "")
+        if "_" not in name:
+            continue
+        parts = name.split("_")
+        if len(parts) < 2:
+            continue
+        freq = parts[-1]
+        ticker = "_".join(parts[:-1]).upper()
+        min_time = None
+        max_time = None
+        rows = 0
+        try:
+            scan = pl.scan_parquet(path)
+            stats = scan.select(
+                [
+                    pl.col("open_time").min().alias("min_time"),
+                    pl.col("open_time").max().alias("max_time"),
+                    pl.count().alias("rows"),
+                ]
+            ).collect()
+            if stats.height:
+                min_time = stats["min_time"][0]
+                max_time = stats["max_time"][0]
+                rows = int(stats["rows"][0])
+        except Exception:
+            continue
+        items.append(
+            MarketDataInfo(
+                ticker=ticker,
+                freq=freq,
+                path=str(path),
+                min_time=str(min_time) if min_time is not None else None,
+                max_time=str(max_time) if max_time is not None else None,
+                rows=rows,
+            )
+        )
+    return items
 
 
 def _spec_from_payload(payload: CashFlowSpecPayload) -> CashFlowSpec:
@@ -284,7 +337,7 @@ def create_event(
 
 @app.put("/events/{event_id}", response_model=List[CashFlowSpecPayload])
 def update_event(
-    event_id: str = Path(...),
+    event_id: str = FastApiPath(...),
     payload: CashFlowSpecPayload = Body(...),
     wallet_id: str = Query("default"),
     manager: WalletManager = Depends(get_manager),
@@ -298,7 +351,7 @@ def update_event(
 
 @app.delete("/events/{event_id}", response_model=List[CashFlowSpecPayload])
 def delete_event(
-    event_id: str = Path(...),
+    event_id: str = FastApiPath(...),
     wallet_id: str = Query("default"),
     manager: WalletManager = Depends(get_manager),
 ) -> List[CashFlowSpecPayload]:
@@ -439,3 +492,181 @@ def alerts(
         end_date=end_date,
     )
     return AlertsResponse(alerts=payload)
+
+
+def _parse_search_space(raw: dict) -> dict:
+    parsed = {}
+    for key, value in raw.items():
+        if "." in key:
+            kind, param = key.split(".", 1)
+        elif isinstance(key, str) and "," in key:
+            parts = key.split(",")
+            if len(parts) == 2:
+                kind, param = parts
+            else:
+                raise HTTPException(status_code=400, detail="invalid search_space key")
+        else:
+            raise HTTPException(status_code=400, detail="invalid search_space key")
+        parsed[(kind, param)] = value
+    return parsed
+
+
+_DEFAULT_STAGE_PARAMS = {
+    ("entry", "ma_signal"): {"fast": 7, "slow": 14},
+    ("target_price", "atr_target"): {"multiplier": 3.0},
+    ("stop_loss", "atr_stop"): {"multiplier": 1.5},
+}
+
+
+def _with_defaults(kind: str, name: str, params: dict) -> dict:
+    defaults = _DEFAULT_STAGE_PARAMS.get((kind, name), {})
+    merged = dict(defaults)
+    merged.update(params or {})
+    return merged
+
+
+def _has_stage(stages: list[dict], kind: str, name: str) -> bool:
+    return any(s.get("kind") == kind and s.get("name") == name for s in stages)
+
+
+@app.post("/optimize_strategy", response_model=OptimizeResponse)
+def optimize_strategy_api(
+    payload: OptimizeRequest = Body(...),
+) -> OptimizeResponse:
+    try:
+        market_df = pl.read_parquet("data/market_data_btcusdt_1h.parquet")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to load market data: {exc}")
+
+    stage_cfgs = [
+        {
+            "kind": cfg.kind,
+            "name": cfg.name,
+            "params": _with_defaults(cfg.kind, cfg.name, cfg.params),
+        }
+        for cfg in payload.stage_cfgs
+    ]
+    search_space = _parse_search_space(payload.search_space)
+
+    best_params, best_metrics, trials = optimize_strategy(
+        market_df=market_df,
+        base_stages=stage_cfgs,
+        search_space=search_space,
+        sampler=payload.sampler,
+        max_iters=payload.max_iters,
+        max_time=payload.max_time,
+        seed=payload.seed,
+        objective=payload.objective,
+        early_stop=payload.early_stop,
+    )
+    trial_payloads = [
+        TrialPayload(
+            trial_id=int(trial.get("trial_id", 0)),
+            params=trial.get("params") or {},
+            metrics=trial.get("metrics") or {},
+        )
+        for trial in trials
+    ]
+    return OptimizeResponse(
+        best_params=best_params,
+        best_metrics=best_metrics,
+        trials=trial_payloads,
+    )
+
+
+@app.post("/evaluate_strategy_run", response_model=EvaluateResponse)
+def evaluate_strategy_api(
+    payload: EvaluateRequest = Body(...),
+) -> EvaluateResponse:
+    path = Path(f"data/market_data_{payload.ticker.lower()}_{payload.freq.lower()}.parquet")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"market data not found for {payload.ticker} {payload.freq}")
+    try:
+        market_df = pl.read_parquet(path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to load market data: {exc}")
+    if payload.start or payload.end:
+        start_dt = None
+        end_dt = None
+        if payload.start:
+            try:
+                start_dt = datetime.fromisoformat(payload.start)
+            except Exception:
+                pass
+        if payload.end:
+            try:
+                end_dt = datetime.fromisoformat(payload.end)
+            except Exception:
+                pass
+        conds = []
+        if start_dt is not None:
+            conds.append(pl.col("open_time") >= pl.lit(start_dt, dtype=pl.Datetime("ms")))
+        if end_dt is not None:
+            conds.append(pl.col("open_time") <= pl.lit(end_dt, dtype=pl.Datetime("ms")))
+        if conds:
+            expr = conds[0]
+            for extra in conds[1:]:
+                expr = expr & extra
+            market_df = market_df.filter(expr)
+
+    stage_cfgs = [
+        {
+            "kind": cfg.kind,
+            "name": cfg.name,
+            "params": _with_defaults(cfg.kind, cfg.name, cfg.params),
+        }
+        for cfg in payload.stage_cfgs
+    ]
+    data_stages = list(stage_cfgs)
+    if not _has_stage(data_stages, "general_transformations", "simulate_trades"):
+        data_stages.append(
+            {
+                "kind": "general_transformations",
+                "name": "simulate_trades",
+                "params": {},
+            }
+        )
+    metrics_stages = list(data_stages)
+    if not _has_stage(metrics_stages, "general_transformations", "metrics_summary"):
+        metrics_stages.append(
+            {
+                "kind": "general_transformations",
+                "name": "metrics_summary",
+                "params": {"output_format": "dict"},
+            }
+        )
+    split_stage = [
+        {
+            "kind": "general_transformations",
+            "name": "split_data_sets",
+            "params": payload.split_params or {},
+        }
+    ]
+    split_df = apply_pipeline(df=market_df, stages=split_stage)
+    if not isinstance(split_df, pl.DataFrame) or "data_set" not in split_df.columns:
+        raise HTTPException(status_code=400, detail="split_data_sets failed")
+    payloads: list[EvaluatePayload] = []
+    labels = ("pre_out_of_time", "train", "test")
+    for label in labels:
+        subset = split_df.filter(pl.col("data_set") == label)
+        data_res = apply_pipeline(df=subset, stages=data_stages)
+        metrics_res = apply_pipeline(df=subset, stages=metrics_stages)
+        metrics = metrics_res if isinstance(metrics_res, dict) else None
+        data = None
+        if payload.include_data and isinstance(data_res, pl.DataFrame):
+            with_label = data_res.with_columns(pl.lit(label).alias("data_set"))
+            data = with_label.to_dicts()
+        payloads.append(
+            EvaluatePayload(
+                dataset=label,
+                metrics=metrics,
+                data=data,
+            )
+        )
+    return EvaluateResponse(results=payloads)
+
+
+@app.get("/market_data/available", response_model=MarketDataList)
+def list_market_data() -> MarketDataList:
+    items = _scan_market_data()
+    return MarketDataList(items=items)

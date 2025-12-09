@@ -32,7 +32,6 @@ export default function DashboardOverview() {
     stats,
     chart,
     events,
-    alerts,
     loading,
     error,
     saveEvent,
@@ -74,8 +73,8 @@ export default function DashboardOverview() {
   return (
     <DashboardPageLayout
       header={{
-        title: "Wallet",
-        description: "Gestiona tus acciones y flujos",
+        title: "Wallet overview",
+        description: "Gestiona flujos y eventos",
         icon: BracketsIcon,
       }}
     >
@@ -180,9 +179,7 @@ export default function DashboardOverview() {
             <div className="text-sm text-destructive mb-4">{error}</div>
           )}
           {loading && (
-            <div
-              className="flex items-center gap-2 text-sm text-muted-foreground mb-4"
-            >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
               <Spinner className="size-4" />
               Actualizando datos...
             </div>

@@ -73,7 +73,7 @@ export default function LaboratoryPage() {
   return (
     <DashboardPageLayout
       header={{
-        title: "Analysis",
+        title: "Laboratory",
         description: "Explora métricas y escenarios",
         icon: BracketsIcon,
       }}
@@ -81,10 +81,7 @@ export default function LaboratoryPage() {
       <div className="flex flex-col gap-4 mb-6">
         <div className="grid gap-2">
           <Label>Wallet</Label>
-          <Select
-            value={walletId || undefined}
-            onValueChange={handleWalletChange}
-          >
+          <Select value={walletId || undefined} onValueChange={handleWalletChange}>
             <SelectTrigger>
               <SelectValue placeholder="Selecciona o crea una wallet" />
             </SelectTrigger>
@@ -104,9 +101,7 @@ export default function LaboratoryPage() {
             <Input
               type="date"
               value={controls.startDate}
-              onChange={(e) =>
-                updateControl({ startDate: e.target.value || today })
-              }
+              onChange={(e) => updateControl({ startDate: e.target.value || today })}
             />
           </div>
           <div className="space-y-1">
@@ -114,9 +109,7 @@ export default function LaboratoryPage() {
             <Input
               type="date"
               value={controls.endDate}
-              onChange={(e) =>
-                updateControl({ endDate: e.target.value || today })
-              }
+              onChange={(e) => updateControl({ endDate: e.target.value || today })}
             />
           </div>
         </div>
@@ -170,25 +163,15 @@ export default function LaboratoryPage() {
         </Dialog>
       </div>
       {!walletId ? (
-        <div className="text-sm text-muted-foreground">
-          Crea una wallet para comenzar.
-        </div>
+        <div className="text-sm text-muted-foreground">Crea una wallet para comenzar.</div>
       ) : (
         <>
           <div className="mb-6">
-            <DashboardControls
-              controls={controls}
-              scenarios={scenarios}
-              onChange={updateControl}
-            />
+            <DashboardControls controls={controls} scenarios={scenarios} onChange={updateControl} />
           </div>
-          {error && (
-            <div className="text-sm text-destructive mb-4">{error}</div>
-          )}
+          {error && <div className="text-sm text-destructive mb-4">{error}</div>}
           {loading && (
-            <div
-              className="flex items-center gap-2 text-sm text-muted-foreground mb-4"
-            >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
               <Spinner className="size-4" />
               Actualizando datos...
             </div>

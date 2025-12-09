@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Optional
 
 
@@ -21,13 +22,14 @@ _MUTED_LOGGERS = [
     'matplotlib.backends.backend_pdf'
 ]
 
+
 def _setup_muted_loggers():
-    """One-time setup of muted loggers"""
     for logger_name in _MUTED_LOGGERS:
         logging.getLogger(logger_name).disabled = True
 
-# Call once at module level
+
 _setup_muted_loggers()
+
 
 def setup_logger(
     name: str,
@@ -39,25 +41,19 @@ def setup_logger(
 ) -> logging.Logger:
     if log_level not in _LOGGING_LEVELS:
         raise ValueError(f"log_level must be one of {list(_LOGGING_LEVELS.keys())}")
-    
     if mode not in _MODE_MAPPING:
         raise ValueError(f"mode must be one of {list(_MODE_MAPPING.keys())}")
 
     logger = logging.getLogger(name)
-    
-    # Clear existing handlers
     if logger.handlers:
         logger.handlers.clear()
-
-    # Set the logging level
     logger.setLevel(_LOGGING_LEVELS[log_level])
-
-    # Configure the log format
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     formatter = logging.Formatter(log_format)
-
-    # Add file handler if specified
     if log_file:
+        Path(log_file).expanduser().resolve().parent.mkdir(
+            parents=True, exist_ok=True
+        )
         file_handler = logging.FileHandler(
             log_file,
             mode=_MODE_MAPPING[mode]
@@ -68,10 +64,7 @@ def setup_logger(
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
-
-    # Set the propagation flag
     logger.propagate = propagate
-
     return logger
 
 
@@ -86,12 +79,31 @@ def setup_logger_for_child(
 ) -> logging.Logger:
     logger_name = f'{parent_name}.{child_name}'
     return setup_logger(
-        name=logger_name,
-        log_level=log_level,
-        log_file=log_file,
-        mode=mode,
-        console=console,
-        propagate=propagate
+    name=logger_name,
+    log_level=log_level,
+    log_file=log_file,
+    mode=mode,
+    console=console,
+    propagate=propagate
+)
+
+
+def build_task_log_path(
+    base_dir: str | Path,
+    dag_id: str,
+    run_id: str,
+    task_id: str,
+    filename: str = "custom.log"
+) -> Path:
+    base = Path(base_dir)
+    def _clean(value: str) -> str:
+        return value.replace("/", "_").replace("\\", "_").strip()
+    return (
+        base
+        / f"dag_id={_clean(dag_id)}"
+        / f"run_id={_clean(run_id)}"
+        / f"task_id={_clean(task_id)}"
+        / filename
     )
 
 

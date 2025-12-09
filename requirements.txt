@@ -1,0 +1,16 @@
+polars
+duckdb
+pyarrow
+httpx
+mlflow
+rich
+typer
+jinja2
+lean
+matplotlib
+pyyaml
+fastapi
+uvicorn
+scikit-learn
+pandas
+typeguard

@@ -1,6 +1,6 @@
 from datetime import date
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -117,3 +117,65 @@ class AlertPayload(BaseModel):
 
 
 AlertsResponse.update_forward_refs()
+
+
+class OptimizeStageCfg(BaseModel):
+    kind: str
+    name: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OptimizeRequest(BaseModel):
+    stage_cfgs: List[OptimizeStageCfg]
+    search_space: Dict[str, Any]
+    sampler: str = "grid"
+    max_iters: Optional[int] = None
+    max_time: Optional[float] = None
+    seed: Optional[int] = None
+    objective: str = "total_return"
+    early_stop: Optional[int] = None
+
+
+class TrialPayload(BaseModel):
+    trial_id: int
+    params: Dict[str, Any]
+    metrics: Dict[str, Any]
+
+
+class OptimizeResponse(BaseModel):
+    best_params: Optional[Dict[str, Any]]
+    best_metrics: Optional[Dict[str, Any]]
+    trials: List[TrialPayload]
+
+
+class EvaluateRequest(BaseModel):
+    stage_cfgs: List[OptimizeStageCfg]
+    split_params: Optional[Dict[str, Any]] = None
+    include_data: bool = False
+    ticker: str = "BTCUSDT"
+    freq: str = "1h"
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+
+class EvaluatePayload(BaseModel):
+    dataset: str
+    metrics: Optional[Dict[str, Any]] = None
+    data: Optional[List[Dict[str, Any]]] = None
+
+
+class EvaluateResponse(BaseModel):
+    results: List[EvaluatePayload]
+
+
+class MarketDataInfo(BaseModel):
+    ticker: str
+    freq: str
+    path: str
+    min_time: Optional[str]
+    max_time: Optional[str]
+    rows: int
+
+
+class MarketDataList(BaseModel):
+    items: List[MarketDataInfo]

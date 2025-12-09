@@ -54,13 +54,13 @@ const data = {
           isActive: false,
         },
         {
-          title: "Devices",
-          url: "/devices",
+          title: "Optimizations",
+          url: "/optimizations",
           icon: ProcessorIcon,
           isActive: false,
         },
         {
-          title: "Security",
+          title: "Evaluate strategy",
           url: "/security",
           icon: CuteRobotIcon,
           isActive: false,
