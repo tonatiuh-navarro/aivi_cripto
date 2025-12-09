@@ -11,6 +11,8 @@ import pendulum
 import polars as pl
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from dotenv import load_dotenv
+from airflow.configuration import conf
 
 # Resolver raíz del repo buscando carpeta con data/etl/pipeline.py
 _resolved = Path(__file__).resolve()
@@ -23,9 +25,12 @@ if not _repo_root:
     _repo_root = _resolved.parents[2]
 if str(_repo_root) not in sys.path:
     sys.path.append(str(_repo_root))
+DATA_DIR = _repo_root / "data"
+load_dotenv(_repo_root / ".env")
 
 from data.etl.pipeline import build_market_etl_pipeline  # noqa: E402
 from data.alerts_runner import run_signal_check  # noqa: E402
+from utils.logging_utils import build_task_log_path  # noqa: E402
 
 
 FREQ_MINUTES = {
@@ -52,7 +57,7 @@ def freq_to_minutes(freq: str) -> int:
 
 
 def load_entries() -> list[dict]:
-    cfg_path = Path("data/etl_schedule.json")
+    cfg_path = DATA_DIR / "etl_schedule.json"
     if not cfg_path.exists():
         return []
     entries = json.loads(cfg_path.read_text())
@@ -83,8 +88,21 @@ def save_state(path: Path, state: dict) -> None:
     path.write_text(json.dumps(state, indent=2))
 
 
-def run_etl(entry: dict) -> None:
+def run_etl(entry: dict, ti=None) -> None:
     logger = logging.getLogger("etl_signals.etl")
+    if ti:
+        exec_str = ti.execution_date.isoformat()
+        safe_exec = exec_str.replace(":", "-").replace("+", "-")
+        filename = f"attempt={safe_exec}_{ti.try_number}.log"
+        base_dir = Path(conf.get("logging", "base_log_folder", fallback=_repo_root / "airflow_home" / "logs"))
+        log_path = build_task_log_path(
+            base_dir=base_dir,
+            dag_id=ti.dag_id,
+            run_id=ti.run_id,
+            task_id=ti.task_id,
+            filename=filename,
+        )
+        os.environ["METAENGINE_LOG_FILE"] = str(log_path)
     state_path = Path("data/etl_schedule_state.json")
     state = load_state(state_path)
     key = f"{entry['ticker']},{entry['freq']}"
@@ -133,8 +151,8 @@ def run_etl(entry: dict) -> None:
 
 def run_signal(entry: dict) -> None:
     logger = logging.getLogger("etl_signals.signal")
-    alerts_cfg = Path("data/alerts_config.json")
-    alerts_state = Path("data/alerts_state.json")
+    alerts_cfg = DATA_DIR / "alerts_config.json"
+    alerts_state = DATA_DIR / "alerts_state.json"
     run_signal_check(entry["ticker"], entry["freq"], alerts_cfg, alerts_state, logger)
 
 
@@ -156,19 +174,26 @@ def notify_status(entry: dict, ti=None) -> None:
         f"total={res.get('total_rows')}"
     )
     logger.info(text)
-    if token and chat_id:
-        subprocess_run(token, chat_id, text)
+    if not token or not chat_id:
+        logger.warning("Sin token o chat_id; no se envía notificación")
+        return
+    rc = subprocess_run(token, chat_id, text)
+    if rc != 0:
+        logger.warning("Fallo al enviar notificación a Telegram; rc=%s", rc)
+    else:
+        logger.info("Notificación enviada a Telegram")
 
 
 def subprocess_run(token: str, chat_id: str, text: str) -> None:
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
-        subprocess.run(
+        completed = subprocess.run(
             ["curl", "-s", "-X", "POST", url, "-d", f"chat_id={chat_id}", "-d", f"text={text}"],
             check=False,
         )
+        return completed.returncode
     except Exception:
-        pass
+        return 1
 
 
 tz = pendulum.local_timezone()
@@ -176,7 +201,7 @@ tz = pendulum.local_timezone()
 with DAG(
     dag_id="etl_signals_quarter_hour",
     schedule="*/15 * * * *",
-    start_date=pendulum.now(tz),
+    start_date=pendulum.datetime(2025, 12, 6, 8, 0, 0, tz=tz),
     catchup=False,
     max_active_runs=1,
     concurrency=3,
