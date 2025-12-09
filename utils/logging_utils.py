@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 
 _LOGGING_LEVELS = {
@@ -30,7 +31,7 @@ _setup_muted_loggers()
 
 def setup_logger(
     name: str,
-    log_file: str = None,
+    log_file: Optional[str] = None,
     log_level: str = 'INFO',
     mode: str = 'append',
     console: bool = True,
@@ -77,7 +78,7 @@ def setup_logger(
 def setup_logger_for_child(
     parent_name: str,
     child_name: str,
-    log_file: str = None,
+    log_file: Optional[str] = None,
     log_level: str = 'DEBUG',
     mode: str = 'append',
     console: bool = True,
@@ -92,3 +93,15 @@ def setup_logger_for_child(
         console=console,
         propagate=propagate
     )
+
+
+def get_time_for_loggers(tic: float,
+                         toc: float, rounder: int = 4,
+                         secs_in_a_minute: int = 60,
+                         return_seconds: bool = False):
+    secs = round(toc - tic, rounder)
+    mins = round(secs / secs_in_a_minute, rounder)
+    if return_seconds:
+        return secs
+    message = f'Total time: {secs} seconds ({mins} minutes)'
+    return message
