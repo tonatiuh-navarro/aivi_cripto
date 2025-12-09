@@ -26,6 +26,12 @@ venv/
 *.db
 *.log
 
+# Airflow local artifacts
+airflow_home/logs/
+airflow_home/airflow-scheduler.*
+airflow_home/airflow-webserver.pid
+actions/.pids/
+
 # Node/Next.js build output
 node_modules/
 .next/
