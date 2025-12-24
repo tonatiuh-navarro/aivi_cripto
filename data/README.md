@@ -16,7 +16,11 @@
 - `--months` controla la ventana reciente del `market_df`; `--atr-period` ajusta el ATR; `--limit` es el tamaño de página de Binance.
 
 ## Frecuencias soportadas
-`1m, 5m, 15m, 30m, 45m (se aproxima a 1h en Binance), 1h, 4h, 6h, 12h, 1d, 1w, 1month`
+
+**Binance:** `1m, 5m, 15m, 30m, 45m, 1h, 4h, 6h, 12h, 1d, 1w, 1month`
+**yfinance:** `1m, 5m, 15m, 30m, 1h (60m), 1d, 1w (1wk), 1month (1mo)`
+
+**Nota:** `45m` en Binance se aproxima a `1h` en yfinance; el mapping está en `data/etl/extraction_yf.py::_INTERVAL_MAP`
 
 ## Rango automático
 - Si no pasas `--start` ni `--end`, el extractor:
@@ -26,11 +30,33 @@
   - Si no hay parquet, usa un lookback de 90 días.
 
 ## Scheduler local (sin Airflow)
-- Configura entradas en `data/etl_schedule.json` (o un `.cfg/.ini` compatible): campos `ticker`, `freq`, `atr_period`, `months`, `interval_minutes`, `enabled`, etc.
+- Configura entradas en `data/etl_schedule.json` (o un `.cfg/.ini` compatible): campos `ticker`, `freq`, `atr_period`, `months`, `interval_minutes`, `enabled`, `datasource` (`binance`|`yfinance`).
 - Una pasada: `python data/run_schedule.py --config data/etl_schedule.json --once`
 - Loop alineado a cada :00/:15/:30/:45: `python data/run_schedule.py --config data/etl_schedule.json --loop`
 - El estado de última ejecución queda en `data/etl_schedule_state.json` y se evita la concurrencia con `data/etl_schedule.lock`.
 - Cada corrida dispara `data.alerts_runner.run_signal_check` al terminar el ETL.
+- En Airflow el datasource default se lee de la Variable `DATASOURCE` (por defecto `yfinance` para probar la rama nueva).
+
+## Airflow DAG (Orquestación en Producción)
+
+Para ejecución programada y robusta, usar el DAG de Airflow:
+
+```bash
+# Iniciar Airflow
+bash actions/start_airflow.sh
+
+# El DAG 'etl_signals_refactored' se ejecutará según el schedule configurado
+# Acceder a la UI: http://localhost:8084
+```
+
+**Características del DAG:**
+- Loop-based task generation (un TaskGroup por ticker)
+- Dataset pattern para evitar XCom serialization
+- Rate limiting integrado en fetch tasks
+- Notificaciones Telegram con stats detallados
+- Tasks modulares en `data/etl/tasks/`
+
+Ver `airflow_home/README.md` para más detalles.
 
 ## Alertas de señal
 - Configuración en `data/alerts_config.json` (ejemplo incluido); estado en `data/alerts_state.json`.
